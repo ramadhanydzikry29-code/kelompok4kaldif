@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Laju Perubahan Harga Pangan & Perbandingan — Kalkulus Diferensial</title>
+
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <!-- Chart Zoom Plugin -->
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
+  <!-- math.js for symbolic derivative & evaluate -->
+  <script src="https://cdn.jsdelivr.net/npm/mathjs@11.8.0/lib/browser/math.js"></script>
+  <!-- jsPDF for PDF export -->
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- GUIDE OVERLAY (shown on load) -->
+  <div id="guideOverlay" class="guide-overlay show">
+    <div class="guide-content">
+      <h2>Selamat datang — Panduan singkat</h2>
+      <ol>
+        <li>Pilih <strong>Kota</strong> dan <strong>Komoditas</strong> dari dropdown (seluruh kabupaten/kota Indonesia tersedia).</li>
+        <li>Lihat <strong>Grafik Harga 30 hari</strong> (data PIHPS jika tersedia; bila tidak, fallback mock lokal).</li>
+        <li>Masukkan harga yang Anda bayar untuk membandingkan (opsional).</li>
+        <li>Panel Kalkulus: tampilkan <em>regresi linear</em> (fungsi aproksimasi), <em>turunan</em> (laju perubahan), dan <em>limit</em> (aproksimasi numerik).</li>
+        <li>Semua perhitungan disertai penjelasan singkat (bahasa yang mudah) agar tidak bingung pengguna dari berbagai kalangan.</li>
+      </ol>
+      <p style="margin-top:8px">Tombol <kbd>?</kbd> di pojok kanan atas bisa dipakai membuka ulang panduan.</p>
+      <div style="display:flex;gap:8px;margin-top:12px;justify-content:flex-end">
+        <button id="guideClose">Mulai</button>
+      </div>
+    </div>
+  </div>
+
+  <button id="helpBtn" title="Panduan">?</button>
+
+  <header>
+    <h1>Laju Perubahan Harga Pangan & Perbandingan</h1>
+    <p class="muted">Menampilkan data harga nasional (PIHPS bila tersedia), input user, dan perhitungan kalkulus diferensial (turunan, limit, pertidaksamaan).</p>
+  </header>
+
+  <div class="container">
+    <!-- Left column controls -->
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <div class="panel">
+        <h3>Kontrol Data</h3>
+
+        <label for="citySelect">Kota / Kabupaten</label>
+        <select id="citySelect"></select>
+
+        <label for="itemSelect">Komoditas</label>
+        <select id="itemSelect"></select>
+
+        <label for="unitSelect">Unit</label>
+        <select id="unitSelect">
+          <option value="kg">kg</option>
+          <option value="liter">liter</option>
+          <option value="butir">butir</option>
+        </select>
+
+        <label for="timeSelect">Waktu Laporan (referensi)</label>
+        <select id="timeSelect">
+          <option value="sebulan">1 bulan lalu</option>
+          <option value="3minggu">3 minggu lalu</option>
+          <option value="2minggu">2 minggu lalu</option>
+          <option value="minggu">1 minggu lalu</option>
+          <option value="kemarin">Kemarin</option>
+          <option value="hariini">Hari ini</option>
+        </select>
+
+        <label for="locationSelect">Lokasi Pembelian</label>
+        <select id="locationSelect">
+          <option>Warung</option>
+          <option>Minimarket</option>
+          <option>E-commerce</option>
+        </select>
+
+        <label for="userPrice">Harga (Rp)</label>
+        <input id="userPrice" type="number" placeholder="Masukkan angka (tanpa titik)" />
+
+        <div style="display:flex;gap:8px;margin-top:10px">
+          <button id="btnSave">Simpan Input User</button>
+          <button id="clearHistory" class="danger">Hapus History</button>
+        </div>
+
+      </div>
+
+      <div class="panel">
+        <h3>Riwayat Input User</h3>
+        <div id="historyList" class="history"><p class="muted">Belum ada input user.</p></div>
+        <div style="margin-top:8px">
+          <button id="exportPdf">Download Laporan (PDF)</button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h3>Prediksi & Nasional</h3>
+        <p class="small">Prediksi sederhana (regresi linear) & ringkasan harga nasional.</p>
+        <div id="predSummary" class="muted" style="margin-top:6px"></div>
+        <div class="card-small" style="margin-top:10px">
+          <strong>Harga Nasional (otomatis)</strong>
+          <div id="nationalBox" class="small muted" style="margin-top:6px">Memuat...</div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Right column -->
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <div class="panel">
+        <h3>Grafik Harga & Prediksi</h3>
+        <div class="chart-wrap panel" style="padding:8px;height:420px">
+          <canvas id="priceChart" style="width:100%;height:100%"></canvas>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
+          <button id="resetZoom">Reset Zoom</button>
+          <div class="small" style="margin-left:auto">Gunakan roda mouse / pinch untuk zoom</div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h3>Kalkulus Diferensial — Panel Interaktif</h3>
+        <div class="calc-grid">
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <div style="padding:8px;border-radius:8px;background:#fbfdff">
+              <strong>Regresi Linear (dari data resmi)</strong>
+              <p class="small" id="regressionFn">f(x) = ...</p>
+              <p class="small" id="derivativeInfo">f'(x) = ...</p>
+              <p class="small" id="limitInfo">Limit: ...</p>
+              <button id="calcForecast">Hitung Prediksi 7 hari</button>
+              <div id="forecastResult" class="small muted" style="margin-top:8px"></div>
+            </div>
+
+            <div style="padding:8px;border-radius:8px;background:#fbfdff">
+              <strong>Pertidaksamaan</strong>
+              <label>Bandingkan prediksi dengan nilai</label>
+              <input id="ineqValue" type="number" placeholder="Masukkan angka (Rp)" />
+              <div style="display:flex;gap:8px;margin-top:8px">
+                <button id="checkIneq">Cek & Tampilkan</button>
+              </div>
+              <div id="ineqResult" class="small muted" style="margin-top:8px"></div>
+            </div>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <div style="padding:8px;border-radius:8px;background:#fbfdff">
+              <strong>Kalkulator Turunan (simbolik)</strong>
+              <label>Masukkan fungsi f(x) — contoh: 3*x^2 + 7*x - 5</label>
+              <input id="funcInput" placeholder="contoh: 3*x^2 + 7*x - 5" />
+              <div style="display:flex;gap:8px;margin-top:8px">
+                <button id="deriveBtn">Hitung Turunan</button>
+                <button id="plotFuncBtn">Plot Fungsi</button>
+              </div>
+              <div id="deriveResult" class="small muted" style="margin-top:8px"></div>
+            </div>
+
+            <div style="padding:8px;border-radius:8px;background:#fbfdff">
+              <strong>Kalkulator Limit (numerik)</strong>
+              <label>Masukkan fungsi & titik (x → a)</label>
+              <input id="limitFunc" placeholder="fungsi: x^2 - 2*x + 1" />
+              <input id="limitPoint" placeholder="titik a (contoh: 2)" style="margin-top:6px" />
+              <div style="display:flex;gap:8px;margin-top:8px">
+                <button id="limitBtn">Hitung Limit</button>
+              </div>
+              <div id="limitResult" class="small muted" style="margin-top:8px"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h3>Penjelasan & Interpretasi</h3>
+        <div id="explainBox" class="small muted">Semua hasil akan dijelaskan di sini (penjelasan kalkulus & interpretasi).</div>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <div>Made for: Tugas Kalkulus Diferensial — menampilkan turunan, limit, fungsi, pertidaksamaan, dan data harga pangan nasional.</div>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>
